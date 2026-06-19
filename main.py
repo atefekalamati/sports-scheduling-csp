@@ -1,4 +1,4 @@
-from test_solver import matches, domains, neighbors, is_consistent
+from sample_data import matches, domains, neighbors, is_consistent
 from solver import solve_csp
 
 
