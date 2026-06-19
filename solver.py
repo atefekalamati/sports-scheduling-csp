@@ -20,21 +20,11 @@ def select_unassigned_variable(matches, domains, assignment):
     return best_variable
 
 
-def is_value_consistent(
-    variable,
-    value,
-    assignment,
-    is_consistent
-):
+def is_value_consistent(variable, value, assignment, is_consistent):
     for assigned_variable in assignment:
         assigned_value = assignment[assigned_variable]
 
-        if not is_consistent(
-            variable,
-            value,
-            assigned_variable,
-            assigned_value
-        ):
+        if not is_consistent(variable, value, assigned_variable, assigned_value):
             return False
 
     return True
@@ -49,14 +39,7 @@ def copy_domains(domains):
     return new_domains
 
 
-def forward_check(
-    variable,
-    value,
-    domains,
-    assignment,
-    neighbors,
-    is_consistent
-):
+def forward_check(variable, value, domains, assignment, neighbors, is_consistent):
     new_domains = copy_domains(domains)
 
     for other_variable in neighbors[variable]:
@@ -66,12 +49,7 @@ def forward_check(
         allowed_values = []
 
         for other_value in new_domains[other_variable]:
-            if is_consistent(
-                variable,
-                value,
-                other_variable,
-                other_value
-            ):
+            if is_consistent(variable, value, other_variable, other_value):
                 allowed_values.append(other_value)
 
         new_domains[other_variable] = allowed_values
@@ -82,30 +60,45 @@ def forward_check(
     return new_domains
 
 
-def backtracking_search(
-    matches,
-    domains,
-    neighbors,
-    assignment,
-    is_consistent,
-    backtrack_counter
-):
+def count_removed_values(variable, value, domains, assignment, neighbors, is_consistent):
+    count = 0
+
+    for other_variable in neighbors[variable]:
+        if other_variable in assignment:
+            continue
+
+        for other_value in domains[other_variable]:
+            if not is_consistent(variable, value, other_variable, other_value):
+                count += 1
+
+    return count
+
+
+def order_values_lcv(variable, domains, assignment, neighbors, is_consistent):
+    values = domains[variable].copy()
+
+    values.sort(
+        key=lambda value: count_removed_values(
+            variable,
+            value,
+            domains,
+            assignment,
+            neighbors,
+            is_consistent
+        )
+    )
+
+    return values
+
+
+def backtracking_search(matches, domains, neighbors, assignment, is_consistent, backtrack_counter):
     if len(assignment) == len(matches):
         return assignment.copy()
 
-    variable = select_unassigned_variable(
-    matches,
-    domains,
-    assignment
-    )
+    variable = select_unassigned_variable(matches, domains, assignment)
 
-    for value in domains[variable]:
-        if is_value_consistent(
-            variable,
-            value,
-            assignment,
-            is_consistent
-        ):
+    for value in order_values_lcv(variable, domains, assignment, neighbors, is_consistent):
+        if is_value_consistent(variable, value, assignment, is_consistent):
             assignment[variable] = value
 
             new_domains = forward_check(
@@ -136,12 +129,7 @@ def backtracking_search(
     return None
 
 
-def solve_csp(
-    matches,
-    domains,
-    neighbors,
-    is_consistent
-):
+def solve_csp(matches, domains, neighbors, is_consistent):
     assignment = {}
     backtrack_counter = [0]
 
