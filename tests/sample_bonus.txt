@@ -1,0 +1,13 @@
+2
+Azadi Takhti
+3
+2
+5
+Team_A Team_B
+Team_C Team_D
+Team_A Team_C
+Team_B Team_D
+Team_E Team_F
+2
+Team_A Team_B
+Team_C Team_D
