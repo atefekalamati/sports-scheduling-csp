@@ -1,12 +1,23 @@
 import time
 
 
-def select_unassigned_variable(matches, assignment):
+def select_unassigned_variable(matches, domains, assignment):
+    unassigned = []
+
     for match_id in range(len(matches)):
         if match_id not in assignment:
-            return match_id
+            unassigned.append(match_id)
 
-    return None
+    if len(unassigned) == 0:
+        return None
+
+    best_variable = unassigned[0]
+
+    for variable in unassigned:
+        if len(domains[variable]) < len(domains[best_variable]):
+            best_variable = variable
+
+    return best_variable
 
 
 def is_value_consistent(
@@ -83,8 +94,9 @@ def backtracking_search(
         return assignment.copy()
 
     variable = select_unassigned_variable(
-        matches,
-        assignment
+    matches,
+    domains,
+    assignment
     )
 
     for value in domains[variable]:
