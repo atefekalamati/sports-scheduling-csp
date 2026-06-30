@@ -1,70 +1,139 @@
-def create_domains(matches, stadiums, days, hours):
-    values = []
+from input_reader import normalize_sensitive
 
-    for day in range(1, days + 1):
-        for hour in range(1, hours + 1):
-            for stadium in stadiums:
-                values.append((day, hour, stadium))
-
-    domains = {}
-
-    for match_id in range(len(matches)):
-        domains[match_id] = values.copy()
-
-    return domains
+# Global context so that create_neighbors can access sensitive_matches
+_SENSITIVE_MATCHES_CONTEXT = set()
 
 
-def create_neighbors(matches):
-    neighbors = {}
+# 1. Variable Definition
+def build_variables(matches: list) -> list:
+    """
+    Each match is treated as a CSP variable.
 
-    for match_id in range(len(matches)):
-        neighbors[match_id] = set()
+    Returns:
+        A list of variable IDs corresponding to match indices:
+        [0, 1, 2, ..., N-1]
+    """
+    return list(range(len(matches)))
 
-        for other_id in range(len(matches)):
-            if match_id != other_id:
-                neighbors[match_id].add(other_id)
+
+# 2. Domain Construction
+def build_domains(variables: list, days: int, hours: int, stadiums: list) -> dict:
+    """
+    Each variable (match) can be assigned any combination of:
+        (day, hour, stadium)
+    Returns:
+        Dictionary mapping each variable to its possible assignments.
+    """
+    full_domain = [
+        (d, h, stadium)
+        for d in range(1, days + 1)
+        for h in range(1, hours + 1)
+        for stadium in stadiums
+    ]
+    return {var: list(full_domain) for var in variables}
+
+
+# 3. Constraint Graph Construction (Neighbors)
+def build_neighbors(
+    variables: list,
+    matches: list,
+    sensitive_matches: set
+) -> dict:
+    """
+    Two matches are neighbors if:
+        - They share at least one team
+        - OR both matches are sensitive matches
+    """
+    neighbors = {var: [] for var in variables}
+
+    for i in variables:
+        for j in variables:
+            if i == j:
+                continue
+
+            teams_i = set(matches[i])
+            teams_j = set(matches[j])
+
+            has_common_team = bool(teams_i & teams_j)
+
+            norm_i = normalize_sensitive(*matches[i])
+            norm_j = normalize_sensitive(*matches[j])
+            both_sensitive = (
+                norm_i in sensitive_matches and
+                norm_j in sensitive_matches
+            )
+
+            # If the matches share a team or both are sensitive,
+            # they must be considered neighbors
+            if has_common_team or both_sensitive:
+                neighbors[i].append(j)
 
     return neighbors
 
 
-def has_common_team(match1, match2):
-    return match1[0] in match2 or match1[1] in match2
+# 4. Consistency Check
+def is_consistent(
+    var_i: int,
+    val_i: tuple,
+    var_j: int,
+    val_j: tuple,
+    matches: list,
+    sensitive_matches: set
+) -> bool:
+    """
+    Constraints:
+        1) If two matches share a team, they cannot be scheduled on the same day.
+        2) Only one match can occupy a specific (day, hour, stadium).
+        3) If both matches are sensitive matches, they cannot be scheduled on the same day.
+    """
+    day_i, hour_i, stadium_i = val_i
+    day_j, hour_j, stadium_j = val_j
 
+    teams_i = set(matches[var_i])
+    teams_j = set(matches[var_j])
 
-def create_consistency_function(matches, sensitive_matches):
-    def is_consistent(variable1, value1, variable2, value2):
-        day1, hour1, stadium1 = value1
-        day2, hour2, stadium2 = value2
-
-        match1 = matches[variable1]
-        match2 = matches[variable2]
-
-        if day1 == day2 and hour1 == hour2 and stadium1 == stadium2:
-            return False
-
-        if has_common_team(match1, match2) and day1 == day2:
-            return False
-
-        both_sensitive = (
-            variable1 in sensitive_matches
-            and variable2 in sensitive_matches
-        )
-
-        if both_sensitive and day1 == day2:
-            return False
-
-        return True
-
-    return is_consistent
-
-
-def is_feasible(stadiums, days, hours, matches, sensitive_matches):
-    total_slots = len(stadiums) * days * hours
-
-    if len(matches) > total_slots:
+    # Constraint 1: matches sharing a team must be on different days
+    if teams_i & teams_j and day_i == day_j:
         return False
 
-    if len(sensitive_matches) > days:
+    # Constraint 2: no two matches can use the same stadium at the same time
+    if day_i == day_j and hour_i == hour_j and stadium_i == stadium_j:
+        return False
+
+    # Constraint 3: sensitive matches must be scheduled on different days
+    norm_i = normalize_sensitive(*matches[var_i])
+    norm_j = normalize_sensitive(*matches[var_j])
+    if norm_i in sensitive_matches and norm_j in sensitive_matches and day_i == day_j:
         return False
 
     return True
+
+
+# 5. Wrappers compatible with main.py
+def create_domains(matches, stadiums, days, hours):
+    variables = build_variables(matches)
+    return build_domains(variables, days, hours, stadiums)
+
+
+def create_neighbors(matches):
+    variables = build_variables(matches)
+    return build_neighbors(variables, matches, _SENSITIVE_MATCHES_CONTEXT)
+
+
+def create_consistency_function(matches, sensitive_matches):
+    global _SENSITIVE_MATCHES_CONTEXT
+    _SENSITIVE_MATCHES_CONTEXT = set(sensitive_matches)
+
+    def consistency_fn(var_i, val_i, var_j, val_j):
+        return is_consistent(var_i, val_i, var_j, val_j, matches, sensitive_matches)
+
+    return consistency_fn
+
+
+def is_feasible(stadiums, days, hours, matches, sensitive_matches):
+    """
+    Ensures that the total number of matches does not exceed
+    the total number of available time slots.
+    """
+    total_slots = len(stadiums) * days * hours
+    return len(matches) <= total_slots
