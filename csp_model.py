@@ -1,14 +1,6 @@
-from input_reader import normalize_sensitive
-
-# Global context so that create_neighbors can access sensitive_matches
-_SENSITIVE_MATCHES_CONTEXT = set()
-
-
 # 1. Variable Definition
 def build_variables(matches: list) -> list:
     """
-    Each match is treated as a CSP variable.
-
     Returns:
         A list of variable IDs corresponding to match indices:
         [0, 1, 2, ..., N-1]
@@ -18,12 +10,6 @@ def build_variables(matches: list) -> list:
 
 # 2. Domain Construction
 def build_domains(variables: list, days: int, hours: int, stadiums: list) -> dict:
-    """
-    Each variable (match) can be assigned any combination of:
-        (day, hour, stadium)
-    Returns:
-        Dictionary mapping each variable to its possible assignments.
-    """
     full_domain = [
         (d, h, stadium)
         for d in range(1, days + 1)
@@ -34,41 +20,14 @@ def build_domains(variables: list, days: int, hours: int, stadiums: list) -> dic
 
 
 # 3. Constraint Graph Construction (Neighbors)
-def build_neighbors(
-    variables: list,
-    matches: list,
-    sensitive_matches: set
-) -> dict:
+def build_neighbors(variables: list, matches: list) -> dict:
     """
     Two matches are neighbors if:
-        - They share at least one team
-        - OR both matches are sensitive matches
+        1) They share at least one team 
+        2) They could compete for the same (day, hour, stadium) slot
+        3) Both matches are sensitive matches
     """
-    neighbors = {var: [] for var in variables}
-
-    for i in variables:
-        for j in variables:
-            if i == j:
-                continue
-
-            teams_i = set(matches[i])
-            teams_j = set(matches[j])
-
-            has_common_team = bool(teams_i & teams_j)
-
-            norm_i = normalize_sensitive(*matches[i])
-            norm_j = normalize_sensitive(*matches[j])
-            both_sensitive = (
-                norm_i in sensitive_matches and
-                norm_j in sensitive_matches
-            )
-
-            # If the matches share a team or both are sensitive,
-            # they must be considered neighbors
-            if has_common_team or both_sensitive:
-                neighbors[i].append(j)
-
-    return neighbors
+    return {i: [j for j in variables if j != i] for i in variables}
 
 
 # 4. Consistency Check
@@ -85,6 +44,9 @@ def is_consistent(
         1) If two matches share a team, they cannot be scheduled on the same day.
         2) Only one match can occupy a specific (day, hour, stadium).
         3) If both matches are sensitive matches, they cannot be scheduled on the same day.
+
+    sensitive_matches is a set of MATCH INDICES, exactly as returned by
+    input_reader.read_input() 
     """
     day_i, hour_i, stadium_i = val_i
     day_j, hour_j, stadium_j = val_j
@@ -101,9 +63,7 @@ def is_consistent(
         return False
 
     # Constraint 3: sensitive matches must be scheduled on different days
-    norm_i = normalize_sensitive(*matches[var_i])
-    norm_j = normalize_sensitive(*matches[var_j])
-    if norm_i in sensitive_matches and norm_j in sensitive_matches and day_i == day_j:
+    if var_i in sensitive_matches and var_j in sensitive_matches and day_i == day_j:
         return False
 
     return True
@@ -117,13 +77,10 @@ def create_domains(matches, stadiums, days, hours):
 
 def create_neighbors(matches):
     variables = build_variables(matches)
-    return build_neighbors(variables, matches, _SENSITIVE_MATCHES_CONTEXT)
+    return build_neighbors(variables, matches)
 
 
 def create_consistency_function(matches, sensitive_matches):
-    global _SENSITIVE_MATCHES_CONTEXT
-    _SENSITIVE_MATCHES_CONTEXT = set(sensitive_matches)
-
     def consistency_fn(var_i, val_i, var_j, val_j):
         return is_consistent(var_i, val_i, var_j, val_j, matches, sensitive_matches)
 
@@ -132,8 +89,18 @@ def create_consistency_function(matches, sensitive_matches):
 
 def is_feasible(stadiums, days, hours, matches, sensitive_matches):
     """
-    Ensures that the total number of matches does not exceed
-    the total number of available time slots.
+    Two necessary pre-checks:
+        1) Capacity: total matches must not exceed total available slots
+           (S x D x H).
+        2) Pigeonhole: number of sensitive matches (K) must not exceed the
+           number of available days (D), since at most one sensitive
+           match can be hosted per day.
     """
     total_slots = len(stadiums) * days * hours
-    return len(matches) <= total_slots
+    if len(matches) > total_slots:
+        return False
+
+    if len(sensitive_matches) > days:
+        return False
+
+    return True
