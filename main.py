@@ -1,4 +1,5 @@
 import sys
+import tempfile
 
 from input_reader import read_input
 from csp_model import (
@@ -23,12 +24,35 @@ def print_solution(matches, solution, backtracks, elapsed_time):
     print("Time:", format(elapsed_time, ".6f"), "seconds")
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python main.py <input_file>")
-        return
+def read_from_terminal():
+    lines = []
 
-    filename = sys.argv[1]
+    try:
+        while True:
+            line = input()
+            lines.append(line)
+    except EOFError:
+        pass
+
+    temp_file = tempfile.NamedTemporaryFile(
+        mode="w",
+        delete=False,
+        encoding="utf-8"
+    )
+
+    for line in lines:
+        temp_file.write(line + "\n")
+
+    temp_file.close()
+
+    return temp_file.name
+
+
+def main():
+    if len(sys.argv) >= 2:
+        filename = sys.argv[1]
+    else:
+        filename = read_from_terminal()
 
     stadiums, days, hours, matches, sensitive_matches = read_input(filename)
 
